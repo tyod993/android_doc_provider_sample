@@ -11,4 +11,6 @@
     <string name="hello_second_fragment">Hello second fragment. Arg: %1$s</string>
 
     <string name="title">Documents</string>
+
+    <string name="key_logged_in">LoggedIn</string>
 </resources>

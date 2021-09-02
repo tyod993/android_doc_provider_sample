@@ -1,7 +1,11 @@
 package com.enfold.android_file_open_sandbox
 
 import android.content.ContentResolver
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
@@ -9,6 +13,7 @@ import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.contentcapture.ContentCaptureContext
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import com.enfold.android_file_open_sandbox.databinding.FragmentFirstBinding
@@ -38,14 +43,16 @@ class FirstFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        val docProvider = DocProvider()
+        val sharedPreferences = requireContext().getSharedPreferences(requireContext().getString(R.string.app_name), Context.MODE_PRIVATE)
+        sharedPreferences.edit().putBoolean(requireContext().getString(R.string.key_logged_in), true).apply()
 
-        val directory = requireContext().filesDir
-        directory.setWritable(true)
-        val file = File(directory.path.plus("/temp_file.docx"))
+        val directory = requireContext().getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
+        directory!!.setWritable(true)
+        val file = File(directory.path.plus("/temp_file.pdf"))
         file.setWritable(true)
+        file.setReadable(true)
         file.createNewFile()
-        file.writeText("This is a test of your local broadcast system")
+        buildPDF(file)
 
 
         //TODO OPen file in new app
@@ -65,5 +72,24 @@ class FirstFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    private fun buildPDF(file : File){
+        // create a new document
+        val document = PdfDocument()
+
+        // create a page description
+        val pageInfo = PdfDocument.PageInfo.Builder(100, 100, 1).create()
+
+        // start a page
+        val page = document.startPage(pageInfo)
+        page.canvas.drawText("WAHOOOOOOOOOOO", 10F, 10F, Paint())
+
+        document.finishPage(page)
+
+        val stream = file.outputStream()
+        document.writeTo(stream)
+        stream.close()
+        document.close()
     }
 }

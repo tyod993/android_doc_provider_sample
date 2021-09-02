@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <array name="image_res_ids">
+        <item>@raw/android_dinner</item>
+        <item>@raw/android_rose</item>
+        <item>@raw/android_pumpkins_fall</item>
+        <item>@raw/android_computer_back</item>
+        <item>@raw/android_computer_android_studio</item>
+    </array>
+
+    <array name="text_res_ids">
+        <item>@raw/cat_names</item>
+        <item>@raw/dog_names</item>
+    </array>
+
+    <array name="docx_res_ids">
+        <item>@raw/example</item>
+    </array>
+</resources>
