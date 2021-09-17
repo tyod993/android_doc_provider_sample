@@ -1,11 +1,12 @@
 package com.enfold.android_file_open_sandbox
-
-import android.content.Context
 import android.content.res.AssetFileDescriptor
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.graphics.Point
-import android.os.*
+import android.os.Build
+import android.os.CancellationSignal
+import android.os.Handler
+import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.DocumentsProvider
 import android.util.Log
@@ -16,33 +17,30 @@ import java.io.FileNotFoundException
 import java.io.IOException
 import java.util.*
 
-
-/**
- * TODO Write out more documentation and do the logging for this class.
- */
-
 class DocProvider : DocumentsProvider() {
 
     companion object {
-        private val DEFAULT_ROOT_PROJECTION = arrayOf(
-            DocumentsContract.Root.COLUMN_ROOT_ID,
-            DocumentsContract.Root.COLUMN_MIME_TYPES,
-            DocumentsContract.Root.COLUMN_FLAGS,
-            DocumentsContract.Root.COLUMN_ICON,
-            DocumentsContract.Root.COLUMN_TITLE,
-            DocumentsContract.Root.COLUMN_SUMMARY,
-            DocumentsContract.Root.COLUMN_DOCUMENT_ID,
-            DocumentsContract.Root.COLUMN_AVAILABLE_BYTES
-        )
+        private val DEFAULT_ROOT_PROJECTION =
+            arrayOf(
+                DocumentsContract.Root.COLUMN_ROOT_ID,
+                DocumentsContract.Root.COLUMN_MIME_TYPES,
+                DocumentsContract.Root.COLUMN_FLAGS,
+                DocumentsContract.Root.COLUMN_ICON,
+                DocumentsContract.Root.COLUMN_TITLE,
+                DocumentsContract.Root.COLUMN_SUMMARY,
+                DocumentsContract.Root.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Root.COLUMN_AVAILABLE_BYTES
+            )
 
-        private val DEFAULT_DOCUMENT_PROJECTION = arrayOf(
-            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-            DocumentsContract.Document.COLUMN_MIME_TYPE,
-            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
-            DocumentsContract.Document.COLUMN_FLAGS,
-            DocumentsContract.Document.COLUMN_SIZE
-        )
+        private val DEFAULT_DOCUMENT_PROJECTION =
+            arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+                DocumentsContract.Document.COLUMN_FLAGS,
+                DocumentsContract.Document.COLUMN_SIZE
+            )
 
         private const val MAX_SEARCH_RESULTS = 20
         private const val MAX_LAST_MODIFIED = 5
@@ -57,8 +55,7 @@ class DocProvider : DocumentsProvider() {
     @RequiresApi(Build.VERSION_CODES.N)
     override fun onCreate(): Boolean {
         Log.v(TAG, "onCreate")
-        mBaseDir = requireContext().getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
-        //writeDummyFilesToStorage()
+        mBaseDir = context!!.filesDir
         return true
     }
 
@@ -67,31 +64,22 @@ class DocProvider : DocumentsProvider() {
 
         val result = MatrixCursor(resolveRootProjection(projection))
 
-        /*
-        if (!isUserLoggedIn()) {
-            return result
-        }
-
-         */
-
         val row = result.newRow()
         row.add(DocumentsContract.Root.COLUMN_ROOT_ID, ROOT)
         row.add(DocumentsContract.Root.COLUMN_SUMMARY, context!!.getString(R.string.app_name))
-
         row.add(
-            DocumentsContract.Root.COLUMN_FLAGS, DocumentsContract.Root.FLAG_SUPPORTS_CREATE or
+            DocumentsContract.Root.COLUMN_FLAGS,
+            DocumentsContract.Root.FLAG_SUPPORTS_CREATE or
                     DocumentsContract.Root.FLAG_SUPPORTS_RECENTS or
-                    DocumentsContract.Root.FLAG_SUPPORTS_SEARCH or
-                    DocumentsContract.Root.FLAG_SUPPORTS_IS_CHILD
+                    DocumentsContract.Root.FLAG_SUPPORTS_SEARCH
         )
 
         row.add(DocumentsContract.Root.COLUMN_TITLE, context!!.getString(R.string.app_name))
-
         row.add(DocumentsContract.Root.COLUMN_DOCUMENT_ID, getDocIdForFile(mBaseDir))
-
         row.add(DocumentsContract.Root.COLUMN_MIME_TYPES, getChildMimeTypes())
         row.add(DocumentsContract.Root.COLUMN_AVAILABLE_BYTES, mBaseDir!!.freeSpace)
         row.add(DocumentsContract.Root.COLUMN_ICON, R.drawable.ic_launcher_foreground)
+
         return result
     }
 
@@ -104,10 +92,10 @@ class DocProvider : DocumentsProvider() {
         val parent = getFileForDocId(rootId)
 
         // Create a queue to store the most recent documents, which orders by last modified.
-        val lastModifiedFiles = PriorityQueue(5
-        ) { i: File?, j: File? ->
-            i!!.lastModified().compareTo(j!!.lastModified())
-        }
+        val lastModifiedFiles =
+            PriorityQueue(5) { i: File?, j: File? ->
+                i!!.lastModified().compareTo(j!!.lastModified())
+            }
 
         val pending = LinkedList<File?>()
 
@@ -120,11 +108,7 @@ class DocProvider : DocumentsProvider() {
             val file = pending.removeFirst()
             if (file!!.isDirectory) {
                 // If it's a directory, add all its children to the unprocessed list
-                Collections.addAll(
-                    pending, *Objects.requireNonNull(
-                        file.listFiles()
-                    )
-                )
+                Collections.addAll(pending, *Objects.requireNonNull(file.listFiles()))
             } else {
                 // If it's a file, add it to the ordered queue.
                 lastModifiedFiles.add(file)
@@ -149,9 +133,12 @@ class DocProvider : DocumentsProvider() {
     ): Cursor {
         Log.v(TAG, "querySearchDocuments")
 
+        // Create a cursor with the requested projection, or the default projection.
         val result = MatrixCursor(resolveDocumentProjection(projection))
         val parent = getFileForDocId(rootId)
 
+        // Iterate through all files in the file structure under the root until we reach the
+        // desired number of matches.
         val pending = LinkedList<File?>()
 
         // Start by adding the parent to the list of files to be processed
@@ -163,11 +150,7 @@ class DocProvider : DocumentsProvider() {
             val file = pending.removeFirst()
             if (file!!.isDirectory) {
                 // If it's a directory, add all its children to the unprocessed list
-                Collections.addAll(
-                    pending, *Objects.requireNonNull(
-                        file.listFiles()
-                    )
-                )
+                Collections.addAll(pending, *Objects.requireNonNull(file.listFiles()))
             } else {
                 // If it's a file and it matches, add it to the result cursor.
                 if (file.name.lowercase().contains(query!!)) {
@@ -180,7 +163,8 @@ class DocProvider : DocumentsProvider() {
 
     @Throws(FileNotFoundException::class)
     override fun openDocumentThumbnail(
-        documentId: String, sizeHint: Point?,
+        documentId: String,
+        sizeHint: Point?,
         signal: CancellationSignal?
     ): AssetFileDescriptor {
         Log.v(TAG, "openDocumentThumbnail")
@@ -193,6 +177,7 @@ class DocProvider : DocumentsProvider() {
     override fun queryDocument(documentId: String?, projection: Array<String>?): Cursor {
         Log.v(TAG, "queryDocument")
 
+        // Create a cursor with the requested projection, or the default projection.
         return MatrixCursor(resolveDocumentProjection(projection)).apply {
             includeFile(this, documentId, null)
         }
@@ -200,49 +185,50 @@ class DocProvider : DocumentsProvider() {
 
     @Throws(FileNotFoundException::class)
     override fun queryChildDocuments(
-        parentDocumentId: String, projection: Array<String>?,
+        parentDocumentId: String,
+        projection: Array<String>?,
         sortOrder: String
     ): Cursor {
         Log.v(
-            TAG, "queryChildDocuments, parentDocumentId: " +
+            TAG,
+            "queryChildDocuments, parentDocumentId: " +
                     parentDocumentId +
                     " sortOrder: " +
                     sortOrder
         )
         return MatrixCursor(resolveDocumentProjection(projection)).apply {
             val parent = getFileForDocId(parentDocumentId)
-            //Maybe this isnt returning properly
-            (parent!!.listFiles())!!.forEach { file ->
-                includeFile(this, null, file)}
+            (parent!!.listFiles())!!.forEach { file -> includeFile(this, null, file) }
         }
     }
 
     @Throws(FileNotFoundException::class)
     override fun openDocument(
-        documentId: String, mode: String,
+        documentId: String,
+        mode: String,
         signal: CancellationSignal?
     ): ParcelFileDescriptor? {
         Log.v(TAG, "openDocument, mode: $mode")
 
         val file = getFileForDocId(documentId)
         val accessMode = ParcelFileDescriptor.parseMode(mode)
-
         val isWrite = mode.indexOf('w') != -1
         return if (isWrite) {
+            // Attach a close listener if the document is opened in write mode.
             try {
                 val handler = Handler(context!!.mainLooper)
-                ParcelFileDescriptor.open(file, accessMode, handler
-                ) {
+                ParcelFileDescriptor.open(file, accessMode, handler) {
                     Log.i(
                         TAG,
-                        ("A file with id " + documentId + " has been closed!  Time to " +
+                        ("A file with id " +
+                                documentId +
+                                " has been closed!  Time to " +
                                 "update the server.")
                     )
                 }
             } catch (e: IOException) {
                 throw FileNotFoundException(
-                    ("Failed to open document with id " + documentId +
-                            " and mode " + mode)
+                    ("Failed to open document with id " + documentId + " and mode " + mode)
                 )
             }
         } else {
@@ -266,7 +252,9 @@ class DocProvider : DocumentsProvider() {
         } catch (e: IOException) {
             throw FileNotFoundException(
                 "Failed to create document with name " +
-                        displayName + " and documentId " + documentId
+                        displayName +
+                        " and documentId " +
+                        documentId
             )
         }
         return getDocIdForFile(file)
@@ -285,8 +273,7 @@ class DocProvider : DocumentsProvider() {
 
     @Throws(FileNotFoundException::class)
     override fun getDocumentType(documentId: String): String {
-        val file = getFileForDocId(documentId)
-        return getTypeForFile(file)
+        return getTypeForFile(getFileForDocId(documentId))
     }
 
     /**
@@ -335,7 +322,7 @@ class DocProvider : DocumentsProvider() {
     }
 
     /**
-     * Gets a string of unique MIME data types a directory supports, separated by newlines.  This
+     * Gets a string of unique MIME data types a directory supports, separated by newlines. This
      * should not change.
      *
      * @return a string of the unique MIME data types the parent directory supports
@@ -344,7 +331,7 @@ class DocProvider : DocumentsProvider() {
         val mimeTypes: MutableSet<String> = HashSet()
         mimeTypes.add("image/*")
         mimeTypes.add("text/*")
-        mimeTypes.add("*/*")
+        mimeTypes.add("*")
 
         // Flatten the list into a string and insert newlines between the MIME type strings.
         val mimeTypesString = StringBuilder()
@@ -355,14 +342,8 @@ class DocProvider : DocumentsProvider() {
     }
 
     /**
-     * Get the document ID given a File.  The document id must be consistent across time.  Other
+     * Get the document ID given a File. The document id must be consistent across time. Other
      * applications may save the ID and use it to reference documents later.
-     *
-     *
-     * This implementation is specific to this demo.  It assumes only one root and is built
-     * directly from the file structure.  However, it is possible for a document to be a child of
-     * multiple directories (for example "android" and "images"), in which case the file must have
-     * the same consistent, unique document ID in both cases.
      *
      * @param file the File whose document ID you want
      * @return the corresponding document ID
@@ -386,16 +367,17 @@ class DocProvider : DocumentsProvider() {
      * Add a representation of a file to a cursor.
      *
      * @param result the cursor to modify
-     * @param docId  the document ID representing the desired file (may be null if given file)
-     * @param file   the File object representing the desired file (may be null if given docID)
+     * @param docId the document ID representing the desired file (may be null if given file)
+     * @param file the File object representing the desired file (may be null if given docID)
      */
     @Throws(FileNotFoundException::class)
     private fun includeFile(result: MatrixCursor, docId: String?, file: File?) {
-        var mDocId = docId
+        val mDocId: String
         var mFile = file
-        if (mDocId == null) {
+        if (docId == null) {
             mDocId = getDocIdForFile(mFile)
         } else {
+            mDocId = docId
             mFile = getFileForDocId(mDocId)
         }
         var flags = 0
@@ -414,7 +396,7 @@ class DocProvider : DocumentsProvider() {
             flags = flags or DocumentsContract.Document.FLAG_SUPPORTS_THUMBNAIL
         }
         val row = result.newRow()
-        row.add(DocumentsContract.Document.COLUMN_DOCUMENT_ID, docId)
+        row.add(DocumentsContract.Document.COLUMN_DOCUMENT_ID, mDocId)
         row.add(DocumentsContract.Document.COLUMN_DISPLAY_NAME, displayName)
         row.add(DocumentsContract.Document.COLUMN_SIZE, mFile.length())
         row.add(DocumentsContract.Document.COLUMN_MIME_TYPE, mimeType)
@@ -433,14 +415,11 @@ class DocProvider : DocumentsProvider() {
      */
     @Throws(FileNotFoundException::class)
     private fun getFileForDocId(docId: String): File? {
-        Log.v(TAG, "get file for doc id")
         var target = mBaseDir
         if ((docId == ROOT)) {
-            Log.v(TAG, "is root")
             return target
         }
         val splitIndex = docId.indexOf(':', 1)
-        Log.v(TAG, splitIndex.toString())
         if (splitIndex < 0) {
             throw FileNotFoundException("Missing root for $docId")
         } else {
@@ -449,20 +428,7 @@ class DocProvider : DocumentsProvider() {
             if (!target.exists()) {
                 throw FileNotFoundException("Missing file for $docId at $target")
             }
-            Log.v(TAG, target.name)
             return target
         }
     }
-
-    /**
-     * Dummy function to determine whether the user is logged in.
-     */
-    private fun isUserLoggedIn(): Boolean {
-        val sharedPreferences = context!!.getSharedPreferences(
-            context!!.getString(R.string.app_name),
-            Context.MODE_PRIVATE
-        ) //TODO for debug purposes we are using true as the default value this must be changed in production
-        return sharedPreferences.getBoolean(context!!.getString(R.string.key_logged_in), true)
-    }
-
 }
